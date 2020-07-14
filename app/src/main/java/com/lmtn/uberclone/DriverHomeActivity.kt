@@ -1,9 +1,13 @@
 package com.lmtn.uberclone
 
+import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.text.TextUtils
 import android.view.Menu
 import android.view.View
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -18,14 +22,24 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.navigation.NavController
+import com.bumptech.glide.Glide
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageReference
+import com.lmtn.uberclone.utils.UserUtils
+import java.util.*
+import kotlin.collections.HashMap
 
 class DriverHomeActivity : AppCompatActivity() {
 
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var navView: NavigationView
     private lateinit var drawerLayout: DrawerLayout
-    private lateinit var navController:NavController
+    private lateinit var navController: NavController
+    private lateinit var imgAvatar: ImageView
+    private lateinit var waitingDialog: AlertDialog
+    private lateinit var storageReference: StorageReference
+    private var imageUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +63,9 @@ class DriverHomeActivity : AppCompatActivity() {
     }
 
     private fun init() {
+        storageReference = FirebaseStorage.getInstance().getReference()
+        waitingDialog =
+            AlertDialog.Builder(this).setMessage("Waiting...").setCancelable(false).create()
         navView.setNavigationItemSelectedListener {
             if (it.itemId == R.id.nav_exit) {
                 val builder = AlertDialog.Builder(this@DriverHomeActivity)
@@ -84,11 +101,86 @@ class DriverHomeActivity : AppCompatActivity() {
         val txt_name = headerView.findViewById<View>(R.id.txt_name) as TextView
         val txt_phone = headerView.findViewById<View>(R.id.txt_phone) as TextView
         val txt_star = headerView.findViewById<View>(R.id.txt_star) as TextView
-
+        imgAvatar = headerView.findViewById<View>(R.id.img_avatar) as ImageView
         txt_name.setText(Common.buildWelcomMessage())
         txt_phone.setText(Common.currentUser!!.phoneNumber)
         txt_star.setText(StringBuilder().append(Common.currentUser!!.rating))
 
+        if (Common.currentUser != null && Common.currentUser!!.avatar != null && !TextUtils.isEmpty(
+                Common.currentUser!!.avatar
+            )
+        ) {
+            Glide.with(this).load(Common.currentUser!!.avatar)
+                .into(imgAvatar)
+        }
+
+        imgAvatar.setOnClickListener {
+            val intent = Intent()
+            intent.setType("image/*")
+            intent.setAction(Intent.ACTION_GET_CONTENT)
+            startActivityForResult(
+                Intent.createChooser(intent, "Select Picture"),
+                PICK_IMAGE_REQUEST
+            )
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
+            if (data != null && data.data != null) {
+                imageUri = data.data
+                imgAvatar.setImageURI(imageUri)
+                showDialogUpload()
+            }
+        }
+    }
+
+    private fun showDialogUpload() {
+        val builder = AlertDialog.Builder(this@DriverHomeActivity)
+        builder.setTitle("Change Avatar")
+            .setMessage("Do you want to change avatar")
+            .setNegativeButton("CANCLE",
+                { dialogInterface, i -> dialogInterface.dismiss() })
+            .setPositiveButton("CHANGE", { dialogInterface, i ->
+
+                if (imageUri != null) {
+                    waitingDialog.show()
+                    val avatarFolder =
+                        storageReference.child("avatars/" + FirebaseAuth.getInstance().currentUser!!.uid)
+                    avatarFolder.putFile(imageUri!!)
+                        .addOnFailureListener { e ->
+                            Snackbar.make(drawerLayout, e.message!!, Snackbar.LENGTH_LONG).show()
+                            waitingDialog.dismiss()
+                        }.addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                avatarFolder.downloadUrl.addOnSuccessListener { uri ->
+                                    val update_data = HashMap<String, Any>()
+                                    update_data.put("avatar", uri.toString())
+                                    UserUtils.updateUser(drawerLayout, update_data)
+                                }
+                            }
+                            waitingDialog.dismiss()
+                        }.addOnProgressListener { taskSnapShot ->
+                            val progress =
+                                (100.0 * taskSnapShot.bytesTransferred / taskSnapShot.totalByteCount)
+                            waitingDialog.setMessage(
+                                StringBuilder("Uploading:").append(progress).append("%")
+                            )
+                        }
+                }
+            })
+
+
+        val dialog = builder.create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setTextColor(resources.getColor(android.R.color.holo_red_dark))
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+                .setTextColor(resources.getColor(R.color.colorAccent))
+        }
+
+        dialog.show()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -101,4 +193,9 @@ class DriverHomeActivity : AppCompatActivity() {
         val navController = findNavController(R.id.nav_host_fragment)
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
     }
+
+    companion object {
+        val PICK_IMAGE_REQUEST = 7272
+    }
 }
+

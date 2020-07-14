@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.text.TextUtils
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -19,8 +20,10 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
+import com.google.firebase.iid.FirebaseInstanceId
 import com.lmtn.uberclone.Common.DRIVER_INFO_REFERENCE
 import com.lmtn.uberclone.model.DriverInfoModel
+import com.lmtn.uberclone.utils.UserUtils
 import io.reactivex.Completable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import java.sql.Array
@@ -38,6 +41,7 @@ class SplashScreenActivity : AppCompatActivity() {
     private lateinit var firebaseAuth: FirebaseAuth
     private lateinit var listener: FirebaseAuth.AuthStateListener
     private lateinit var progress_bar: ProgressBar;
+
     //Firebase Database
     private lateinit var database: FirebaseDatabase
     private lateinit var driverInfoRef: DatabaseReference
@@ -78,6 +82,13 @@ class SplashScreenActivity : AppCompatActivity() {
         listener = FirebaseAuth.AuthStateListener { myFirebaseAuth ->
             val user = myFirebaseAuth.currentUser
             if (user != null) {
+                FirebaseInstanceId.getInstance().instanceId.addOnFailureListener { e ->
+                    Toast.makeText(this@SplashScreenActivity, e.message, Toast.LENGTH_SHORT).show()
+                }
+                    .addOnSuccessListener { instanceIdResult ->
+                        Log.d("TOKEN", instanceIdResult.token)
+                        UserUtils.updateToken(this@SplashScreenActivity, instanceIdResult.token)
+                    }
                 checkUserFromFirebase();
             } else
                 showLoginLayout()
@@ -109,7 +120,7 @@ class SplashScreenActivity : AppCompatActivity() {
 
     private fun goToHomeActivity(model: DriverInfoModel?) {
         Common.currentUser = model
-        startActivity(Intent(this,DriverHomeActivity::class.java))
+        startActivity(Intent(this, DriverHomeActivity::class.java))
         finish()
     }
 
@@ -119,7 +130,8 @@ class SplashScreenActivity : AppCompatActivity() {
 
         val edtFirstName = itemInflater.findViewById<View>(R.id.edt_first_name) as TextInputEditText
         val edtLastName = itemInflater.findViewById<View>(R.id.edt_last_name) as TextInputEditText
-        val edtPhoneNumber = itemInflater.findViewById<View>(R.id.edt_phone_number) as TextInputEditText
+        val edtPhoneNumber =
+            itemInflater.findViewById<View>(R.id.edt_phone_number) as TextInputEditText
 
         val btnContinue = itemInflater.findViewById<View>(R.id.btn_register) as Button
 
@@ -166,13 +178,21 @@ class SplashScreenActivity : AppCompatActivity() {
 
                 driverInfoRef.child(FirebaseAuth.getInstance().currentUser!!.uid)
                     .setValue(model)
-                    .addOnFailureListener{ e ->
-                        Toast.makeText(this@SplashScreenActivity,"" + e.message ,Toast.LENGTH_SHORT).show()
+                    .addOnFailureListener { e ->
+                        Toast.makeText(
+                            this@SplashScreenActivity,
+                            "" + e.message,
+                            Toast.LENGTH_SHORT
+                        ).show()
                         dialog.dismiss()
                         progress_bar.visibility = View.GONE
                     }
                     .addOnSuccessListener {
-                        Toast.makeText(this@SplashScreenActivity,"Register Successfully" ,Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@SplashScreenActivity,
+                            "Register Successfully",
+                            Toast.LENGTH_SHORT
+                        ).show()
                         dialog.dismiss()
                         goToHomeActivity(model)
                         progress_bar.visibility = View.GONE
